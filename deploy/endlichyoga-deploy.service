@@ -1,0 +1,13 @@
+[Unit]
+Description=endlichyoga.de deploy (pull built branch + rsync into docroot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as the `deploy` user: it owns /opt/http/endlichyoga.de (same user the
+# mariusklimke.de deploy uses).
+User=deploy
+ExecStart=/opt/endlichyoga-deploy/deploy.sh
+StandardOutput=journal
+StandardError=journal

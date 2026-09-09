@@ -1,0 +1,14 @@
+[Unit]
+Description=endlichyoga.de deploy webhook receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/endlichyoga-deploy/webhook.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
