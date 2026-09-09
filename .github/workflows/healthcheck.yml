@@ -45,13 +45,12 @@ jobs:
         run: |
           set -euo pipefail
           NOW="$(date -u +'%Y-%m-%d %H:%M UTC')"
+          BODY="Health check (hourly workflow) failed at **\$NOW** for:${{ steps.check.outputs.failed }} — [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})."
           if gh issue list --label healthcheck --state open --json number --jq 'length' | grep -q '^0$'; then
             gh issue create \
-              --title "⚠️ endlichyoga.de down ($NOW)" \
+              --title "⚠️ endlichyoga.de down (\$NOW)" \
               --label healthcheck \
-              --body "Health check (hourly workflow) failed at **$NOW** for:${{ steps.check.outputs.failed }}
-
-See the [Health Check workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+              --body "$BODY"
           else
             echo "open healthcheck issue already exists — not creating a duplicate"
           fi
