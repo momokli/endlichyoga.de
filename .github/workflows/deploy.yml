@@ -25,6 +25,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Serialize deploy runs: two quick merges to main would start parallel runs
+# that race on the force-push of the `built` branch (the loser fails with
+# exit 128). A new run cancels a still-running older one.
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
 permissions:
   contents: write # push the `built` branch
 
