@@ -1,0 +1,58 @@
+name: Deploy
+
+# On every push to main: publish the site to the `built` branch and trigger
+# the deploy webhook on the server.
+#
+# Deploy model (no SSH keys), mirroring MacMasus/mariusklimke.de:
+#   CI publish → POST https://deploy.endlichyoga.de/deploy (Bearer DEPLOY_TOKEN)
+#             → server-side receiver (deploy/webhook.py, 127.0.0.1:18794)
+#             → systemd oneshot endlichyoga-deploy.service → deploy.sh pulls
+#               the `built` branch and rsyncs it into the Caddy docroot
+#               (/opt/http/endlichyoga.de).
+#
+# This site is fully static — no build step (no Node/sharp/minify). The
+# `built` branch is therefore a 1:1 copy of `main`.
+#
+# Runs on a GitHub-hosted runner (ubuntu-latest) — no self-hosted runner
+# registration needed, no third-party repo code on the server.
+#
+# Required repository secret (Settings → Secrets and variables → Actions):
+#   - DEPLOY_TOKEN: shared secret, must equal the deploy token on the server
+#     (see /etc/endlichyoga/deploy.token — provisioned via deploy/, issue #2)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the `built` branch
+
+jobs:
+  publish-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sanity check source files
+        run: |
+          for f in index.html impressum.html datenschutz.html css/style.css; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          echo "source files OK"
+
+      - name: Publish site to `built` branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B built
+          git add -A
+          git commit -m "build: $(date -u +'%Y-%m-%d %H:%M UTC')" --allow-empty
+          git push --force origin built
+
+      - name: Trigger deploy webhook
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}" \
+            "https://deploy.endlichyoga.de/deploy"
