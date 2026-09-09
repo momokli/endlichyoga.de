@@ -114,3 +114,9 @@ Cargo.lock
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/intellij+all,rust
+### endlichyoga.de ###
+# Lokale Deploy-/Build-Artefakte — der `built`-Branch wird ausschließlich von
+# CI force-gepusht und nie lokal committet; tmp-Ablagen nicht einchecken.
+built/
+tmp/
+*.log
