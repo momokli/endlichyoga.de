@@ -34,6 +34,8 @@ if [ ! -f "$TMP/index.html" ]; then
 fi
 
 log "Syncing into $DEST ..."
-rsync -a --delete "$TMP/" "$DEST/"
+# Keep repo artifacts (deploy/, .github/, .git/) out of the docroot — the
+# built branch is a 1:1 copy of main and would otherwise serve them publicly.
+rsync -a --delete --exclude 'deploy/' --exclude '.github/' --exclude '.git/' "$TMP/" "$DEST/"
 
 log "Deploy complete: $(find "$DEST" -maxdepth 1 -type f | wc -l) files in docroot"
