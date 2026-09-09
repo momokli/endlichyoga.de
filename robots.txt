@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://endlichyoga.de/sitemap.xml
