@@ -1,0 +1,72 @@
+name: Health Check
+
+# Hourly availability check for https://endlichyoga.de and
+# https://www.endlichyoga.de.
+#
+# On failure: opens a GitHub issue labelled `healthcheck` (only if no open
+# healthcheck issue exists yet, so repeated failures do not spam).
+# On success: closes any open healthcheck issues.
+#
+# No secrets required. Uses only the built-in GITHUB_TOKEN (issues: write).
+
+on:
+  schedule:
+    # hourly at minute 17 (offset from the hour to avoid burst load)
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check endlichyoga.de
+        id: check
+        run: |
+          set -euo pipefail
+          FAILED=""
+          for url in https://endlichyoga.de https://www.endlichyoga.de; do
+            if curl -fsS --max-time 15 -o /dev/null "$url"; then
+              echo "OK   $url"
+            else
+              echo "DOWN $url"
+              FAILED="$FAILED $url"
+            fi
+          done
+          echo "failed=${FAILED}" >> "$GITHUB_OUTPUT"
+          echo "failed=${FAILED}"
+
+      - name: Open downtime issue
+        if: steps.check.outputs.failed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +'%Y-%m-%d %H:%M UTC')"
+          BODY="Health check (hourly workflow) failed at **\$NOW** for:${{ steps.check.outputs.failed }} — [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+          if gh issue list --label healthcheck --state open --json number --jq 'length' | grep -q '^0$'; then
+            gh issue create \
+              --title "⚠️ endlichyoga.de down (\$NOW)" \
+              --label healthcheck \
+              --body "$BODY"
+          else
+            echo "open healthcheck issue already exists — not creating a duplicate"
+          fi
+
+      - name: Close issues on recovery
+        if: steps.check.outputs.failed == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ISSUES="$(gh issue list --label healthcheck --state open --json number --jq '.[].number' | tr '\n' ' ')"
+          if [ -n "$ISSUES" ]; then
+            for n in $ISSUES; do
+              echo "closing #$n"
+              gh issue close "$n" --comment "✅ Website is reachable again (checked $(date -u +'%Y-%m-%d %H:%M UTC'))."
+            done
+          else
+            echo "no open healthcheck issues"
+          fi
