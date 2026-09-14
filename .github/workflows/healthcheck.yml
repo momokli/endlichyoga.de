@@ -3,11 +3,24 @@ name: Health Check
 # Hourly availability check for https://endlichyoga.de and
 # https://www.endlichyoga.de.
 #
-# On failure: opens a GitHub issue labelled `healthcheck` (only if no open
-# healthcheck issue exists yet, so repeated failures do not spam).
-# On success: closes any open healthcheck issues.
+# On failure: opens a GitHub issue titled `⚠️ endlichyoga.de down …`
+#             (only if no such open issue exists, so repeated failures do not
+#             spam).
+# On success: closes those issues again.
 #
-# No secrets required. Uses only the built-in GITHUB_TOKEN (issues: write).
+# No repository secrets required — uses only the built-in GITHUB_TOKEN
+# (issues: write).
+#
+# Notes on the fixes in this file:
+# - `gh` needs repository context. Without `actions/checkout` it aborts with
+#   "fatal: not a git repository (or any of the parent directories): .git",
+#   which used to fail the "Close issues on recovery" step on every run and
+#   would also have broken downtime alerting.
+# - Issues are matched by title prefix instead of the `healthcheck` label:
+#   that label does not exist in this repository and `gh issue create
+#   --label healthcheck` would have failed (labels are not auto-created).
+# - Specifying `permissions:` resets all other scopes to `none`, so
+#   `contents: read` is required for the checkout step.
 
 on:
   schedule:
@@ -16,12 +29,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  issues: write
+  contents: read # checkout (repo context for gh)
+  issues: write # open/close downtime issues
 
 jobs:
   healthcheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ISSUE_TITLE_PREFIX: "⚠️ endlichyoga.de down"
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Check endlichyoga.de
         id: check
         run: |
@@ -45,15 +65,16 @@ jobs:
         run: |
           set -euo pipefail
           NOW="$(date -u +'%Y-%m-%d %H:%M UTC')"
-          BODY="Health check (hourly workflow) failed at **\$NOW** for:${{ steps.check.outputs.failed }} — [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})."
-          if gh issue list --label healthcheck --state open --json number --jq 'length' | grep -q '^0$'; then
-            gh issue create \
-              --title "⚠️ endlichyoga.de down (\$NOW)" \
-              --label healthcheck \
-              --body "$BODY"
-          else
-            echo "open healthcheck issue already exists — not creating a duplicate"
+          existing="$(gh issue list --state open --limit 100 --json title \
+            --jq '[.[] | select(.title | contains("endlichyoga.de down"))] | length')"
+          if [ "$existing" != "0" ]; then
+            echo "open downtime issue already exists — not creating a duplicate"
+            exit 0
           fi
+          BODY="Health check (hourly workflow) failed at **$NOW** for:${{ steps.check.outputs.failed }} — [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+          gh issue create \
+            --title "$ISSUE_TITLE_PREFIX ($NOW)" \
+            --body "$BODY"
 
       - name: Close issues on recovery
         if: steps.check.outputs.failed == ''
@@ -61,12 +82,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ISSUES="$(gh issue list --label healthcheck --state open --json number --jq '.[].number' | tr '\n' ' ')"
-          if [ -n "$ISSUES" ]; then
-            for n in $ISSUES; do
-              echo "closing #$n"
-              gh issue close "$n" --comment "✅ Website is reachable again (checked $(date -u +'%Y-%m-%d %H:%M UTC'))."
-            done
-          else
-            echo "no open healthcheck issues"
+          ISSUES="$(gh issue list --state open --limit 100 --json number,title \
+            --jq '.[] | select(.title | contains("endlichyoga.de down")) | .number')"
+          if [ -z "$ISSUES" ]; then
+            echo "no open downtime issues"
+            exit 0
           fi
+          while read -r n; do
+            echo "closing #$n"
+            gh issue close "$n" --comment "✅ Website is reachable again (checked $(date -u +'%Y-%m-%d %H:%M UTC'))."
+          done <<< "$ISSUES"
